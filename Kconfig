@@ -1,0 +1,36 @@
+#
+# Copyright (c) 2022 Laird Connectivity LLC
+#
+# SPDX-License-Identifier: LicenseRef-LairdConnectivity-Clause
+#
+menuconfig SYSTEM_MESSAGE_TASK
+	bool "Enable Framework System Message task"
+	depends on FWK_AUTO_GENERATE_FILES
+	depends on ATTR
+
+if SYSTEM_MESSAGE_TASK
+
+module=SMT
+module-str=SMT
+source "subsys/logging/Kconfig.template.log_config"
+
+config SMT_PRIORITY
+	int "Preemptible thread priority"
+	range 0 NUM_PREEMPT_PRIORITIES
+	default 0
+
+config SMT_STACK_SIZE
+	int "Stack size"
+	default 798
+
+config SMT_QUEUE_SIZE
+	int "Message queue number of entries"
+	default 8
+
+config SMT_SYS_INIT_PRIORITY
+	int "Init priority (Post kernel)"
+	range 0 99
+	default 99
+
+endif # SYSTEM_MESSAGE_TASK
+
