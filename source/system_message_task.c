@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: LicenseRef-LairdConnectivity-Clause
  */
 #include <logging/log.h>
-LOG_MODULE_REGISTER(template, CONFIG_SMT_LOG_LEVEL);
+LOG_MODULE_REGISTER(smt, CONFIG_SMT_LOG_LEVEL);
 #define THIS_FILE "smt"
 
 /**************************************************************************************************/
@@ -24,12 +24,20 @@ LOG_MODULE_REGISTER(template, CONFIG_SMT_LOG_LEVEL);
 static const FwkMsgCode_t MSG_CODES[] = { FMC_ATTR_CHANGED };
 
 /**************************************************************************************************/
+/* Global Data Definitions                                                                        */
+/**************************************************************************************************/
+/* Use the attribute mutex to prevent priority inheritance issues that
+ * occur when using two mutexes.  A user of the attribute changed callback may
+ * request the mutex before the thread changing the value has released it.
+ */
+extern struct k_mutex attr_mutex;
+
+/**************************************************************************************************/
 /* Local Data Definitions                                                                         */
 /**************************************************************************************************/
 static struct {
 	FwkMsgTask_t msg_task;
 	bool initialized;
-	struct k_mutex mutex;
 	sys_slist_t msg_handler_list;
 	sys_slist_t attr_changed_list;
 	struct smt_agent agent0;
@@ -65,7 +73,7 @@ static FwkMsgHandler_t *smt_msg_dispatcher(FwkMsgCode_t msg_code)
 		return Framework_UnknownMsgHandler;
 	}
 
-	k_mutex_lock(&smt.mutex, K_FOREVER);
+	k_mutex_lock(&attr_mutex, K_FOREVER);
 	SYS_SLIST_FOR_EACH_NODE (&smt.msg_handler_list, node) {
 		agent = CONTAINER_OF(node, struct smt_agent, node);
 		/* If the message code is found, then set handler to non-null.
@@ -82,7 +90,7 @@ static FwkMsgHandler_t *smt_msg_dispatcher(FwkMsgCode_t msg_code)
 			break;
 		}
 	}
-	k_mutex_unlock(&smt.mutex);
+	k_mutex_unlock(&attr_mutex);
 
 	return handler;
 }
@@ -93,10 +101,8 @@ static FwkMsgHandler_t *smt_msg_dispatcher(FwkMsgCode_t msg_code)
 static int smt_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
-
 	int status;
 
-	k_mutex_init(&smt.mutex);
 	sys_slist_init(&smt.msg_handler_list);
 	sys_slist_init(&smt.attr_changed_list);
 
@@ -147,9 +153,9 @@ int smt_register_message_agent(struct smt_agent *agent)
 		return -EINVAL;
 	}
 
-	k_mutex_lock(&smt.mutex, K_FOREVER);
+	k_mutex_lock(&attr_mutex, K_FOREVER);
 	sys_slist_append(&smt.msg_handler_list, &agent->node);
-	k_mutex_unlock(&smt.mutex);
+	k_mutex_unlock(&attr_mutex);
 
 	return 0;
 }
@@ -165,9 +171,9 @@ int smt_register_attr_changed_agent(struct smt_attr_changed_agent *agent)
 		return -EINVAL;
 	}
 
-	k_mutex_lock(&smt.mutex, K_FOREVER);
+	k_mutex_lock(&attr_mutex, K_FOREVER);
 	sys_slist_append(&smt.attr_changed_list, &agent->node);
-	k_mutex_unlock(&smt.mutex);
+	k_mutex_unlock(&attr_mutex);
 
 	return 0;
 }
@@ -189,7 +195,7 @@ static DispatchResult_t smt_msg_handler(FwkMsgReceiver_t *msg_rxer, FwkMsg_t *ms
 	struct smt_agent *agent;
 	int i;
 
-	k_mutex_lock(&smt.mutex, K_FOREVER);
+	k_mutex_lock(&attr_mutex, K_FOREVER);
 	SYS_SLIST_FOR_EACH_NODE (&smt.msg_handler_list, node) {
 		agent = CONTAINER_OF(node, struct smt_agent, node);
 		for (i = 0; i < agent->msg_code_count; i++) {
@@ -202,7 +208,7 @@ static DispatchResult_t smt_msg_handler(FwkMsgReceiver_t *msg_rxer, FwkMsg_t *ms
 		}
 		/* Don't break from slist loop; there can be multiple handlers for each message type. */
 	}
-	k_mutex_unlock(&smt.mutex);
+	k_mutex_unlock(&attr_mutex);
 
 	return DISPATCH_OK;
 }
@@ -214,12 +220,12 @@ static void smt_attr_changed_callback(const FwkMsg_t *msg, void *context)
 	sys_snode_t *node;
 	struct smt_attr_changed_agent *agent;
 
-	k_mutex_lock(&smt.mutex, K_FOREVER);
+	k_mutex_lock(&attr_mutex, K_FOREVER);
 	SYS_SLIST_FOR_EACH_NODE (&smt.attr_changed_list, node) {
 		agent = CONTAINER_OF(node, struct smt_attr_changed_agent, node);
 		if (agent->callback != NULL) {
 			agent->callback(acm->list, acm->count, agent->context);
 		}
 	}
-	k_mutex_unlock(&smt.mutex);
+	k_mutex_unlock(&attr_mutex);
 }
