@@ -15,9 +15,9 @@ module-str=SMT
 source "subsys/logging/Kconfig.template.log_config"
 
 config SMT_PRIORITY
-	int "Preemptible thread priority"
-	range 0 NUM_PREEMPT_PRIORITIES
-	default 0
+	int "Cooperative thread priority"
+	range 1 NUM_COOP_PRIORITIES
+	default 1
 
 config SMT_STACK_SIZE
 	int "Stack size"
